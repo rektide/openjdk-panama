@@ -342,17 +342,15 @@ AC_DEFUN_ONCE([FLAGS_SETUP_COMPILER_FLAGS_FOR_OPTIMIZATION],
       # no adjustment
       ;;
     fastdebug )
-      # Add compile time bounds checks.
-      CFLAGS_DEBUG_OPTIONS="-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1"
-      CXXFLAGS_DEBUG_OPTIONS="-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1"
+      # no adjustment
       ;;
     slowdebug )
-      # Add runtime bounds checks and symbol info.
-      CFLAGS_DEBUG_OPTIONS="-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fstack-protector-all --param ssp-buffer-size=1"
-      CXXFLAGS_DEBUG_OPTIONS="-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fstack-protector-all --param ssp-buffer-size=1"
+      # Add runtime stack smashing and undefined behavior checks
+      CFLAGS_DEBUG_OPTIONS="-fstack-protector-all --param ssp-buffer-size=1"
+      CXXFLAGS_DEBUG_OPTIONS="-fstack-protector-all --param ssp-buffer-size=1"
       if test "x$HAS_CFLAG_DETECT_UNDEFINED_BEHAVIOR" = "xtrue"; then
         CFLAGS_DEBUG_OPTIONS="$CFLAGS_DEBUG_OPTIONS  $CFLAG_DETECT_UNDEFINED_BEHAVIOR_FLAG"
-        CXXFLAGS_DEBUG_OPTIONS="$CXXFLAGS_DEBUG_OPTIONS $CFLAG_DETECT_UNDEFINED_BEHAVIOR_FLAG"
+        CXXFLAGS_DEBUG_OPTIONS="$CXXFLAGS_DEBUG_OPTIONS $CFLAG_DETECT_UNDEFINED_BEHAVIsOR_FLAG"
       fi
       ;;
     esac
@@ -407,11 +405,7 @@ AC_DEFUN_ONCE([FLAGS_SETUP_COMPILER_FLAGS_FOR_OPTIMIZATION],
         C_O_FLAG_HI="-O3"
         C_O_FLAG_NORM="-O2"
       fi
-      if test "x$HAS_CFLAG_OPTIMIZE_DEBUG" = "xtrue"; then
-        C_O_FLAG_DEBUG="$CFLAG_OPTIMIZE_DEBUG_FLAG"
-      else
-        C_O_FLAG_DEBUG="-O0"
-      fi
+      C_O_FLAG_DEBUG="-O0"
       C_O_FLAG_NONE="-O0"
     elif test "x$TOOLCHAIN_TYPE" = xclang; then
       if test "x$OPENJDK_TARGET_OS" = xmacosx; then
@@ -672,12 +666,9 @@ AC_DEFUN_ONCE([FLAGS_SETUP_COMPILER_FLAGS_FOR_JDK],
 
   # Setup some hard coded includes
   COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK \
-      -I${JDK_OUTPUTDIR}/include \
-      -I${JDK_OUTPUTDIR}/include/$OPENJDK_TARGET_OS \
-      -I${JDK_TOPDIR}/src/share/javavm/export \
-      -I${JDK_TOPDIR}/src/$OPENJDK_TARGET_OS_EXPORT_DIR/javavm/export \
-      -I${JDK_TOPDIR}/src/share/native/common \
-      -I${JDK_TOPDIR}/src/$OPENJDK_TARGET_OS_API_DIR/native/common"
+      -I${JDK_TOPDIR}/src/java.base/share/native/include \
+      -I${JDK_TOPDIR}/src/java.base/$OPENJDK_TARGET_OS/native/include \
+      -I${JDK_TOPDIR}/src/java.base/$OPENJDK_TARGET_OS_API_DIR/native/include"
 
   # The shared libraries are compiled using the picflag.
   CFLAGS_JDKLIB="$COMMON_CCXXFLAGS_JDK $CFLAGS_JDK $PICFLAG $CFLAGS_JDKLIB_EXTRA"
@@ -907,7 +898,7 @@ AC_DEFUN_ONCE([FLAGS_SETUP_COMPILER_FLAGS_MISC],
 
   case "${TOOLCHAIN_TYPE}" in
     microsoft)
-      CFLAGS_WARNINGS_ARE_ERRORS="/WX"
+      CFLAGS_WARNINGS_ARE_ERRORS="-WX"
       ;;
     solstudio)
       CFLAGS_WARNINGS_ARE_ERRORS="-errtags -errwarn=%all"
