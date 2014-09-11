@@ -634,6 +634,10 @@ USE_PRECOMPILED_HEADER
 SJAVAC_SERVER_DIR
 ENABLE_SJAVAC
 SJAVAC_SERVER_JAVA
+JAVA_TOOL_FLAGS_SMALL
+JAVA_FLAGS_SMALL
+JAVA_FLAGS_BIG
+JAVA_FLAGS
 JOBS
 MEMORY_SIZE
 NUM_CORES
@@ -749,6 +753,7 @@ MCS
 GNM
 NM
 STRIP
+MSBUILD
 DUMPBIN
 RC
 MT
@@ -805,10 +810,6 @@ JAXWS_TOPDIR
 JAXP_TOPDIR
 CORBA_TOPDIR
 LANGTOOLS_TOPDIR
-JAVA_TOOL_FLAGS_SMALL
-JAVA_FLAGS_SMALL
-JAVA_FLAGS_BIG
-JAVA_FLAGS
 JAVAC_FLAGS
 BOOT_JDK_SOURCETARGET
 JARSIGNER
@@ -1064,7 +1065,6 @@ with_update_version
 with_user_release_suffix
 with_build_number
 with_boot_jdk
-with_boot_jdk_jvmargs
 with_add_source_root
 with_override_source_root
 with_adds_and_overrides
@@ -1089,6 +1089,7 @@ with_cups_include
 with_freetype
 with_freetype_include
 with_freetype_lib
+with_freetype_src
 enable_freetype_bundling
 with_alsa
 with_alsa_include
@@ -1106,6 +1107,7 @@ with_dxsdk_include
 with_num_cores
 with_memory_size
 with_jobs
+with_boot_jdk_jvmargs
 with_sjavac_server_java
 enable_sjavac
 enable_precompiled_headers
@@ -1904,10 +1906,6 @@ Optional Packages:
                           number is not set.[username_builddateb00]
   --with-build-number     Set build number value for build [b00]
   --with-boot-jdk         path to Boot JDK (used to bootstrap build) [probed]
-  --with-boot-jdk-jvmargs specify JVM arguments to be passed to all java
-                          invocations of boot JDK, overriding the default
-                          values, e.g --with-boot-jdk-jvmargs="-Xmx8G
-                          -enableassertions"
   --with-add-source-root  for each and every source directory, look in this
                           additional source root for the same directory; if it
                           exists and have files in it, include it in the build
@@ -1946,6 +1944,9 @@ Optional Packages:
                           headers under PATH/include)
   --with-freetype-include specify directory for the freetype include files
   --with-freetype-lib     specify directory for the freetype library
+  --with-freetype-src     specify directory with freetype sources to
+                          automatically build the library (experimental,
+                          Windows-only)
   --with-alsa             specify prefix directory for the alsa package
                           (expecting the libraries under PATH/lib and the
                           headers under PATH/include)
@@ -1979,6 +1980,10 @@ Optional Packages:
                           --with-memory-size=1024 [probed]
   --with-jobs             number of parallel jobs to let make run [calculated
                           based on cores and memory]
+  --with-boot-jdk-jvmargs specify JVM arguments to be passed to all java
+                          invocations of boot JDK, overriding the default
+                          values, e.g --with-boot-jdk-jvmargs="-Xmx8G
+                          -enableassertions"
   --with-sjavac-server-java
                           use this java binary for running the sjavac
                           background server [Boot JDK java]
@@ -3882,20 +3887,18 @@ cygwin_help() {
       HELP_MSG="You might be able to fix this by running '$PKGHANDLER_COMMAND'."
       ;;
     freetype)
-      if test "x$OPENJDK_TARGET_CPU_BITS" = x32; then
-        HELP_MSG="To install freetype, run:
-wget \"http://gnuwin32.sourceforge.net/downlinks/freetype.php\" -O /tmp/freetype-setup.exe
-chmod +x /tmp/freetype-setup.exe
-/tmp/freetype-setup.exe
-Follow GUI prompts, and install to default directory \"C:\Program Files (x86)\GnuWin32\".
-After installation, locate lib/libfreetype.dll.a and make a copy with the name freetype.dll."
-      else
-        HELP_MSG="You need to build a 64-bit version of freetype.
-This is not readily available.
-You can find source code and build instructions on
-http://www.freetype.org/
-If you put the resulting build in \"C:\Program Files\GnuWin32\", it will be found automatically."
-      fi
+      HELP_MSG="
+The freetype library can now be build during the configure process.
+Download the freetype sources and unpack them into an arbitrary directory:
+
+wget http://download.savannah.gnu.org/releases/freetype/freetype-2.5.3.tar.gz
+tar -xzf freetype-2.5.3.tar.gz
+
+Then run configure with '--with-freetype-src=<freetype_src>'. This will
+automatically build the freetype library into '<freetype_src>/lib64' for 64-bit
+builds or into '<freetype_src>/lib32' for 32-bit builds.
+Afterwards you can always use '--with-freetype-include=<freetype_src>/include'
+and '--with-freetype-lib=<freetype_src>/lib32|64' for other builds."
       ;;
   esac
 }
@@ -4042,6 +4045,8 @@ pkgadd_help() {
 # or visit www.oracle.com if you need additional information or have any
 # questions.
 #
+
+
 
 
 
@@ -4315,13 +4320,14 @@ TOOLCHAIN_DESCRIPTION_xlc="IBM XL C/C++"
 
 
 
+
 # This line needs to be here, verbatim, after all includes and the dummy hook
 # definitions. It is replaced with custom functionality when building
 # custom sources.
 #CUSTOM_AUTOCONF_INCLUDE
 
 # Do not change or remove the following line, it is needed for consistency checks:
-DATE_WHEN_GENERATED=1409143073
+DATE_WHEN_GENERATED=1410377275
 
 ###############################################################################
 #
@@ -17284,7 +17290,12 @@ $as_echo_n "checking if find supports -delete... " >&6; }
   if test -f $DELETEDIR/TestIfFindSupportsDelete; then
     # No, it does not.
     rm $DELETEDIR/TestIfFindSupportsDelete
-    FIND_DELETE="-exec rm \{\} \+"
+    if test "x$OPENJDK_TARGET_OS" = "xaix"; then
+      # AIX 'find' is buggy if called with '-exec {} \+' and an empty file list
+      FIND_DELETE="-print | xargs rm"
+    else
+      FIND_DELETE="-exec rm \{\} \+"
+    fi
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
   else
@@ -26315,197 +26326,6 @@ $as_echo "$tool_specified" >&6; }
 
 
 
-  ##############################################################################
-  #
-  # Specify jvm options for anything that is run with the Boot JDK.
-  # Not all JVM:s accept the same arguments on the command line.
-  #
-
-# Check whether --with-boot-jdk-jvmargs was given.
-if test "${with_boot_jdk_jvmargs+set}" = set; then :
-  withval=$with_boot_jdk_jvmargs;
-fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking flags for boot jdk java command " >&5
-$as_echo_n "checking flags for boot jdk java command ... " >&6; }
-
-  # Disable special log output when a debug build is used as Boot JDK...
-
-  $ECHO "Check if jvm arg is ok: -XX:-PrintVMOptions -XX:-UnlockDiagnosticVMOptions -XX:-LogVMOutput" >&5
-  $ECHO "Command: $JAVA -XX:-PrintVMOptions -XX:-UnlockDiagnosticVMOptions -XX:-LogVMOutput -version" >&5
-  OUTPUT=`$JAVA -XX:-PrintVMOptions -XX:-UnlockDiagnosticVMOptions -XX:-LogVMOutput -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs="$boot_jdk_jvmargs -XX:-PrintVMOptions -XX:-UnlockDiagnosticVMOptions -XX:-LogVMOutput"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  # Apply user provided options.
-
-  $ECHO "Check if jvm arg is ok: $with_boot_jdk_jvmargs" >&5
-  $ECHO "Command: $JAVA $with_boot_jdk_jvmargs -version" >&5
-  OUTPUT=`$JAVA $with_boot_jdk_jvmargs -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs="$boot_jdk_jvmargs $with_boot_jdk_jvmargs"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $boot_jdk_jvmargs" >&5
-$as_echo "$boot_jdk_jvmargs" >&6; }
-
-  # For now, general JAVA_FLAGS are the same as the boot jdk jvmargs
-  JAVA_FLAGS=$boot_jdk_jvmargs
-
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking flags for boot jdk java command for big workloads" >&5
-$as_echo_n "checking flags for boot jdk java command for big workloads... " >&6; }
-
-  # Starting amount of heap memory.
-
-  $ECHO "Check if jvm arg is ok: -Xms64M" >&5
-  $ECHO "Command: $JAVA -Xms64M -version" >&5
-  OUTPUT=`$JAVA -Xms64M -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -Xms64M"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  # Maximum amount of heap memory.
-  # Maximum stack size.
-  if test "x$BUILD_NUM_BITS" = x32; then
-    JVM_MAX_HEAP=1100M
-    STACK_SIZE=768
-  else
-    # Running Javac on a JVM on a 64-bit machine, takes more space since 64-bit
-    # pointers are used. Apparently, we need to increase the heap and stack
-    # space for the jvm. More specifically, when running javac to build huge
-    # jdk batch
-    JVM_MAX_HEAP=1600M
-    STACK_SIZE=1536
-  fi
-
-  $ECHO "Check if jvm arg is ok: -Xmx$JVM_MAX_HEAP" >&5
-  $ECHO "Command: $JAVA -Xmx$JVM_MAX_HEAP -version" >&5
-  OUTPUT=`$JAVA -Xmx$JVM_MAX_HEAP -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -Xmx$JVM_MAX_HEAP"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  $ECHO "Check if jvm arg is ok: -XX:ThreadStackSize=$STACK_SIZE" >&5
-  $ECHO "Command: $JAVA -XX:ThreadStackSize=$STACK_SIZE -version" >&5
-  OUTPUT=`$JAVA -XX:ThreadStackSize=$STACK_SIZE -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -XX:ThreadStackSize=$STACK_SIZE"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $boot_jdk_jvmargs_big" >&5
-$as_echo "$boot_jdk_jvmargs_big" >&6; }
-
-  JAVA_FLAGS_BIG=$boot_jdk_jvmargs_big
-
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking flags for boot jdk java command for small workloads" >&5
-$as_echo_n "checking flags for boot jdk java command for small workloads... " >&6; }
-
-  # Use serial gc for small short lived tools if possible
-
-  $ECHO "Check if jvm arg is ok: -XX:+UseSerialGC" >&5
-  $ECHO "Command: $JAVA -XX:+UseSerialGC -version" >&5
-  OUTPUT=`$JAVA -XX:+UseSerialGC -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_small="$boot_jdk_jvmargs_small -XX:+UseSerialGC"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  $ECHO "Check if jvm arg is ok: -Xms32M" >&5
-  $ECHO "Command: $JAVA -Xms32M -version" >&5
-  OUTPUT=`$JAVA -Xms32M -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_small="$boot_jdk_jvmargs_small -Xms32M"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  $ECHO "Check if jvm arg is ok: -Xmx512M" >&5
-  $ECHO "Command: $JAVA -Xmx512M -version" >&5
-  OUTPUT=`$JAVA -Xmx512M -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_small="$boot_jdk_jvmargs_small -Xmx512M"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $boot_jdk_jvmargs_small" >&5
-$as_echo "$boot_jdk_jvmargs_small" >&6; }
-
-  JAVA_FLAGS_SMALL=$boot_jdk_jvmargs_small
-
-
-  JAVA_TOOL_FLAGS_SMALL=""
-  for f in $JAVA_FLAGS_SMALL; do
-    JAVA_TOOL_FLAGS_SMALL="$JAVA_TOOL_FLAGS_SMALL -J$f"
-  done
-
-
-
 ###############################################################################
 #
 # Configure the sources to use. We can add or override individual directories.
@@ -27067,6 +26887,10 @@ $as_echo "no" >&6; }
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Visual Studio installation at $VS100BASE using $METHOD" >&5
 $as_echo "$as_me: Found Visual Studio installation at $VS100BASE using $METHOD" >&6;}
         VS_ENV_CMD="$VS100BASE/$VCVARSFILE"
+        # PLATFORM_TOOLSET is used during the compilation of the freetype sources (see
+        # 'LIB_BUILD_FREETYPE' in libraries.m4) and must be one of 'v100', 'v110' or 'v120' for VS 2010, 2012 or VS2013
+        # TODO: improve detection for other versions of VS
+        PLATFORM_TOOLSET="v100"
       else
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Visual Studio installation at $VS100BASE using $METHOD" >&5
 $as_echo "$as_me: Found Visual Studio installation at $VS100BASE using $METHOD" >&6;}
@@ -27108,6 +26932,10 @@ $as_echo "$as_me: Please point to the VC/bin directory within the Visual Studio 
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Visual Studio installation at $VS100BASE using $METHOD" >&5
 $as_echo "$as_me: Found Visual Studio installation at $VS100BASE using $METHOD" >&6;}
         VS_ENV_CMD="$VS100BASE/$VCVARSFILE"
+        # PLATFORM_TOOLSET is used during the compilation of the freetype sources (see
+        # 'LIB_BUILD_FREETYPE' in libraries.m4) and must be one of 'v100', 'v110' or 'v120' for VS 2010, 2012 or VS2013
+        # TODO: improve detection for other versions of VS
+        PLATFORM_TOOLSET="v100"
       else
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Visual Studio installation at $VS100BASE using $METHOD" >&5
 $as_echo "$as_me: Found Visual Studio installation at $VS100BASE using $METHOD" >&6;}
@@ -27138,6 +26966,10 @@ $as_echo "$as_me: Warning: $VCVARSFILE is missing, this is probably Visual Studi
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Visual Studio installation at $VS100BASE using $METHOD" >&5
 $as_echo "$as_me: Found Visual Studio installation at $VS100BASE using $METHOD" >&6;}
         VS_ENV_CMD="$VS100BASE/$VCVARSFILE"
+        # PLATFORM_TOOLSET is used during the compilation of the freetype sources (see
+        # 'LIB_BUILD_FREETYPE' in libraries.m4) and must be one of 'v100', 'v110' or 'v120' for VS 2010, 2012 or VS2013
+        # TODO: improve detection for other versions of VS
+        PLATFORM_TOOLSET="v100"
       else
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Visual Studio installation at $VS100BASE using $METHOD" >&5
 $as_echo "$as_me: Found Visual Studio installation at $VS100BASE using $METHOD" >&6;}
@@ -27167,6 +26999,10 @@ $as_echo "$as_me: Warning: $VCVARSFILE is missing, this is probably Visual Studi
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Visual Studio installation at $VS100BASE using $METHOD" >&5
 $as_echo "$as_me: Found Visual Studio installation at $VS100BASE using $METHOD" >&6;}
         VS_ENV_CMD="$VS100BASE/$VCVARSFILE"
+        # PLATFORM_TOOLSET is used during the compilation of the freetype sources (see
+        # 'LIB_BUILD_FREETYPE' in libraries.m4) and must be one of 'v100', 'v110' or 'v120' for VS 2010, 2012 or VS2013
+        # TODO: improve detection for other versions of VS
+        PLATFORM_TOOLSET="v100"
       else
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Visual Studio installation at $VS100BASE using $METHOD" >&5
 $as_echo "$as_me: Found Visual Studio installation at $VS100BASE using $METHOD" >&6;}
@@ -27195,6 +27031,10 @@ $as_echo "$as_me: Warning: $VCVARSFILE is missing, this is probably Visual Studi
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Visual Studio installation at $VS100BASE using $METHOD" >&5
 $as_echo "$as_me: Found Visual Studio installation at $VS100BASE using $METHOD" >&6;}
         VS_ENV_CMD="$VS100BASE/$VCVARSFILE"
+        # PLATFORM_TOOLSET is used during the compilation of the freetype sources (see
+        # 'LIB_BUILD_FREETYPE' in libraries.m4) and must be one of 'v100', 'v110' or 'v120' for VS 2010, 2012 or VS2013
+        # TODO: improve detection for other versions of VS
+        PLATFORM_TOOLSET="v100"
       else
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Visual Studio installation at $VS100BASE using $METHOD" >&5
 $as_echo "$as_me: Found Visual Studio installation at $VS100BASE using $METHOD" >&6;}
@@ -27237,6 +27077,10 @@ $as_echo "$as_me: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD"
         else
           VS_ENV_ARGS="/x64"
         fi
+        # PLATFORM_TOOLSET is used during the compilation of the freetype sources (see
+        # 'LIB_BUILD_FREETYPE' in libraries.m4) and must be 'Windows7.1SDK' for Windows7.1SDK
+        # TODO: improve detection for other versions of SDK
+        PLATFORM_TOOLSET="Windows7.1SDK"
       else
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD" >&5
 $as_echo "$as_me: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD" >&6;}
@@ -27279,6 +27123,10 @@ $as_echo "$as_me: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD"
         else
           VS_ENV_ARGS="/x64"
         fi
+        # PLATFORM_TOOLSET is used during the compilation of the freetype sources (see
+        # 'LIB_BUILD_FREETYPE' in libraries.m4) and must be 'Windows7.1SDK' for Windows7.1SDK
+        # TODO: improve detection for other versions of SDK
+        PLATFORM_TOOLSET="Windows7.1SDK"
       else
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD" >&5
 $as_echo "$as_me: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD" >&6;}
@@ -27321,6 +27169,10 @@ $as_echo "$as_me: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD"
         else
           VS_ENV_ARGS="/x64"
         fi
+        # PLATFORM_TOOLSET is used during the compilation of the freetype sources (see
+        # 'LIB_BUILD_FREETYPE' in libraries.m4) and must be 'Windows7.1SDK' for Windows7.1SDK
+        # TODO: improve detection for other versions of SDK
+        PLATFORM_TOOLSET="Windows7.1SDK"
       else
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD" >&5
 $as_echo "$as_me: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD" >&6;}
@@ -27362,6 +27214,10 @@ $as_echo "$as_me: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD"
         else
           VS_ENV_ARGS="/x64"
         fi
+        # PLATFORM_TOOLSET is used during the compilation of the freetype sources (see
+        # 'LIB_BUILD_FREETYPE' in libraries.m4) and must be 'Windows7.1SDK' for Windows7.1SDK
+        # TODO: improve detection for other versions of SDK
+        PLATFORM_TOOLSET="Windows7.1SDK"
       else
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD" >&5
 $as_echo "$as_me: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD" >&6;}
@@ -27402,6 +27258,10 @@ $as_echo "$as_me: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD"
         else
           VS_ENV_ARGS="/x64"
         fi
+        # PLATFORM_TOOLSET is used during the compilation of the freetype sources (see
+        # 'LIB_BUILD_FREETYPE' in libraries.m4) and must be 'Windows7.1SDK' for Windows7.1SDK
+        # TODO: improve detection for other versions of SDK
+        PLATFORM_TOOLSET="Windows7.1SDK"
       else
         { $as_echo "$as_me:${as_lineno-$LINENO}: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD" >&5
 $as_echo "$as_me: Found Windows SDK installation at $WIN_SDK_BASE using $METHOD" >&6;}
@@ -35297,6 +35157,50 @@ $as_echo "$as_me: This might be caused by spaces in the path, which is not allow
     { $as_echo "$as_me:${as_lineno-$LINENO}: Rewriting DUMPBIN to \"$new_complete\"" >&5
 $as_echo "$as_me: Rewriting DUMPBIN to \"$new_complete\"" >&6;}
   fi
+
+    # We need to check for 'msbuild.exe' because at the place where we expect to
+    # find 'msbuild.exe' there's also a directory called 'msbuild' and configure
+    # won't find the 'msbuild.exe' executable in that case (and the
+    # 'ac_executable_extensions' is unusable due to performance reasons).
+    # Notice that we intentionally don't fix up the path to MSBUILD because we
+    # will call it in a DOS shell during freetype detection on Windows (see
+    # 'LIB_SETUP_FREETYPE' in "libraries.m4"
+    # Extract the first word of "msbuild.exe", so it can be a program name with args.
+set dummy msbuild.exe; ac_word=$2
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+$as_echo_n "checking for $ac_word... " >&6; }
+if ${ac_cv_prog_MSBUILD+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  if test -n "$MSBUILD"; then
+  ac_cv_prog_MSBUILD="$MSBUILD" # Let the user override the test.
+else
+as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in $PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+    for ac_exec_ext in '' $ac_executable_extensions; do
+  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
+    ac_cv_prog_MSBUILD="msbuild.exe"
+    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+  done
+IFS=$as_save_IFS
+
+fi
+fi
+MSBUILD=$ac_cv_prog_MSBUILD
+if test -n "$MSBUILD"; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $MSBUILD" >&5
+$as_echo "$MSBUILD" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
 
   fi
 
@@ -44504,6 +44408,12 @@ if test "${with_freetype_lib+set}" = set; then :
   withval=$with_freetype_lib;
 fi
 
+
+# Check whether --with-freetype-src was given.
+if test "${with_freetype_src+set}" = set; then :
+  withval=$with_freetype_src;
+fi
+
   # Check whether --enable-freetype-bundling was given.
 if test "${enable_freetype_bundling+set}" = set; then :
   enableval=$enable_freetype_bundling;
@@ -44515,7 +44425,7 @@ fi
   FREETYPE_BUNDLE_LIB_PATH=
 
   if test "x$FREETYPE_NOT_NEEDED" = xyes; then
-    if test "x$with_freetype" != x || test "x$with_freetype_include" != x || test "x$with_freetype_lib" != x; then
+    if test "x$with_freetype" != x || test "x$with_freetype_include" != x || test "x$with_freetype_lib" != x || test "x$with_freetype_src" != x; then
       { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: freetype not used, so --with-freetype is ignored" >&5
 $as_echo "$as_me: WARNING: freetype not used, so --with-freetype is ignored" >&2;}
     fi
@@ -44527,6 +44437,429 @@ $as_echo "$as_me: WARNING: freetype not used, so --enable-freetype-bundling is i
     # freetype is needed to build; go get it!
 
     BUNDLE_FREETYPE="$enable_freetype_bundling"
+
+    if  test "x$with_freetype_src" != x; then
+      if test "x$OPENJDK_TARGET_OS" = xwindows; then
+        # Try to build freetype if --with-freetype-src was given on Windows
+
+  FREETYPE_SRC_PATH="$with_freetype_src"
+  BUILD_FREETYPE=yes
+
+  # Check if the freetype sources are acessible..
+  if ! test -d $FREETYPE_SRC_PATH; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: --with-freetype-src specified, but can't find path \"$FREETYPE_SRC_PATH\" - ignoring --with-freetype-src" >&5
+$as_echo "$as_me: WARNING: --with-freetype-src specified, but can't find path \"$FREETYPE_SRC_PATH\" - ignoring --with-freetype-src" >&2;}
+    BUILD_FREETYPE=no
+  fi
+  # ..and contain a vc2010 project file
+  vcxproj_path="$FREETYPE_SRC_PATH/builds/windows/vc2010/freetype.vcxproj"
+  if test "x$BUILD_FREETYPE" = xyes && ! test -s $vcxproj_path; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: Can't find project file $vcxproj_path (you may try a newer freetype version) - ignoring --with-freetype-src" >&5
+$as_echo "$as_me: WARNING: Can't find project file $vcxproj_path (you may try a newer freetype version) - ignoring --with-freetype-src" >&2;}
+    BUILD_FREETYPE=no
+  fi
+  # Now check if configure found a version of 'msbuild.exe'
+  if test "x$BUILD_FREETYPE" = xyes && test "x$MSBUILD" == x ; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: Can't find an msbuild.exe executable (you may try to install .NET 4.0) - ignoring --with-freetype-src" >&5
+$as_echo "$as_me: WARNING: Can't find an msbuild.exe executable (you may try to install .NET 4.0) - ignoring --with-freetype-src" >&2;}
+    BUILD_FREETYPE=no
+  fi
+
+  # Ready to go..
+  if test "x$BUILD_FREETYPE" = xyes; then
+
+    # msbuild requires trailing slashes for output directories
+    freetype_lib_path="$FREETYPE_SRC_PATH/lib$OPENJDK_TARGET_CPU_BITS/"
+    freetype_lib_path_unix="$freetype_lib_path"
+    freetype_obj_path="$FREETYPE_SRC_PATH/obj$OPENJDK_TARGET_CPU_BITS/"
+
+  unix_path="$vcxproj_path"
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+    windows_path=`$CYGPATH -m "$unix_path"`
+    vcxproj_path="$windows_path"
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+    windows_path=`cmd //c echo $unix_path`
+    vcxproj_path="$windows_path"
+  fi
+
+
+  unix_path="$freetype_lib_path"
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+    windows_path=`$CYGPATH -m "$unix_path"`
+    freetype_lib_path="$windows_path"
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+    windows_path=`cmd //c echo $unix_path`
+    freetype_lib_path="$windows_path"
+  fi
+
+
+  unix_path="$freetype_obj_path"
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+    windows_path=`$CYGPATH -m "$unix_path"`
+    freetype_obj_path="$windows_path"
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+    windows_path=`cmd //c echo $unix_path`
+    freetype_obj_path="$windows_path"
+  fi
+
+    if test "x$OPENJDK_TARGET_CPU_BITS" = x64; then
+      freetype_platform=x64
+    else
+      freetype_platform=win32
+    fi
+
+    # The original freetype project file is for VS 2010 (i.e. 'v100'),
+    # so we have to adapt the toolset if building with any other toolsed (i.e. SDK).
+    # Currently 'PLATFORM_TOOLSET' is set in 'TOOLCHAIN_CHECK_POSSIBLE_VISUAL_STUDIO_ROOT'/
+    # 'TOOLCHAIN_CHECK_POSSIBLE_WIN_SDK_ROOT' in toolchain_windows.m4
+    { $as_echo "$as_me:${as_lineno-$LINENO}: Trying to compile freetype sources with PlatformToolset=$PLATFORM_TOOLSET to $freetype_lib_path_unix ..." >&5
+$as_echo "$as_me: Trying to compile freetype sources with PlatformToolset=$PLATFORM_TOOLSET to $freetype_lib_path_unix ..." >&6;}
+
+    # First we try to build the freetype.dll
+    $ECHO -e "@echo off\n"\
+	     "$MSBUILD $vcxproj_path "\
+		       "/p:PlatformToolset=$PLATFORM_TOOLSET "\
+		       "/p:Configuration=\"Release Multithreaded\" "\
+		       "/p:Platform=$freetype_platform "\
+		       "/p:ConfigurationType=DynamicLibrary "\
+		       "/p:TargetName=freetype "\
+		       "/p:OutDir=\"$freetype_lib_path\" "\
+		       "/p:IntDir=\"$freetype_obj_path\" > freetype.log" > freetype.bat
+    cmd /c freetype.bat
+
+    if test -s "$freetype_lib_path_unix/freetype.dll"; then
+      # If that succeeds we also build freetype.lib
+      $ECHO -e "@echo off\n"\
+	       "$MSBUILD $vcxproj_path "\
+			 "/p:PlatformToolset=$PLATFORM_TOOLSET "\
+			 "/p:Configuration=\"Release Multithreaded\" "\
+			 "/p:Platform=$freetype_platform "\
+			 "/p:ConfigurationType=StaticLibrary "\
+			 "/p:TargetName=freetype "\
+			 "/p:OutDir=\"$freetype_lib_path\" "\
+			 "/p:IntDir=\"$freetype_obj_path\" >> freetype.log" > freetype.bat
+      cmd /c freetype.bat
+
+      if test -s "$freetype_lib_path_unix/freetype.lib"; then
+	# Once we build both, lib and dll, set freetype lib and include path appropriately
+	POTENTIAL_FREETYPE_INCLUDE_PATH="$FREETYPE_SRC_PATH/include"
+	POTENTIAL_FREETYPE_LIB_PATH="$freetype_lib_path_unix"
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: Compiling freetype sources succeeded! (see freetype.log for build results)" >&5
+$as_echo "$as_me: Compiling freetype sources succeeded! (see freetype.log for build results)" >&6;}
+      else
+	BUILD_FREETYPE=no
+      fi
+    else
+      BUILD_FREETYPE=no
+    fi
+  fi
+
+        if test "x$BUILD_FREETYPE" = xyes; then
+          # Okay, we built it. Check that it works.
+
+  POTENTIAL_FREETYPE_INCLUDE_PATH="$POTENTIAL_FREETYPE_INCLUDE_PATH"
+  POTENTIAL_FREETYPE_LIB_PATH="$POTENTIAL_FREETYPE_LIB_PATH"
+  METHOD="--with-freetype-src"
+
+  # First check if the files exists.
+  if test -s "$POTENTIAL_FREETYPE_INCLUDE_PATH/ft2build.h"; then
+    # We found an arbitrary include file. That's a good sign.
+    { $as_echo "$as_me:${as_lineno-$LINENO}: Found freetype include files at $POTENTIAL_FREETYPE_INCLUDE_PATH using $METHOD" >&5
+$as_echo "$as_me: Found freetype include files at $POTENTIAL_FREETYPE_INCLUDE_PATH using $METHOD" >&6;}
+    FOUND_FREETYPE=yes
+
+    FREETYPE_LIB_NAME="${LIBRARY_PREFIX}freetype${SHARED_LIBRARY_SUFFIX}"
+    if ! test -s "$POTENTIAL_FREETYPE_LIB_PATH/$FREETYPE_LIB_NAME"; then
+      { $as_echo "$as_me:${as_lineno-$LINENO}: Could not find $POTENTIAL_FREETYPE_LIB_PATH/$FREETYPE_LIB_NAME. Ignoring location." >&5
+$as_echo "$as_me: Could not find $POTENTIAL_FREETYPE_LIB_PATH/$FREETYPE_LIB_NAME. Ignoring location." >&6;}
+      FOUND_FREETYPE=no
+    else
+      if test "x$OPENJDK_TARGET_OS" = xwindows; then
+        # On Windows, we will need both .lib and .dll file.
+        if ! test -s "$POTENTIAL_FREETYPE_LIB_PATH/freetype.lib"; then
+          { $as_echo "$as_me:${as_lineno-$LINENO}: Could not find $POTENTIAL_FREETYPE_LIB_PATH/freetype.lib. Ignoring location." >&5
+$as_echo "$as_me: Could not find $POTENTIAL_FREETYPE_LIB_PATH/freetype.lib. Ignoring location." >&6;}
+          FOUND_FREETYPE=no
+        fi
+      elif test "x$OPENJDK_TARGET_OS" = xsolaris \
+          && test -s "$POTENTIAL_FREETYPE_LIB_PATH$OPENJDK_TARGET_CPU_ISADIR/$FREETYPE_LIB_NAME"; then
+        # Found lib in isa dir, use that instead.
+        POTENTIAL_FREETYPE_LIB_PATH="$POTENTIAL_FREETYPE_LIB_PATH$OPENJDK_TARGET_CPU_ISADIR"
+      fi
+    fi
+  fi
+
+  if test "x$FOUND_FREETYPE" = xyes; then
+
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+
+  # Input might be given as Windows format, start by converting to
+  # unix format.
+  path="$POTENTIAL_FREETYPE_INCLUDE_PATH"
+  new_path=`$CYGPATH -u "$path"`
+
+  # Cygwin tries to hide some aspects of the Windows file system, such that binaries are
+  # named .exe but called without that suffix. Therefore, "foo" and "foo.exe" are considered
+  # the same file, most of the time (as in "test -f"). But not when running cygpath -s, then
+  # "foo.exe" is OK but "foo" is an error.
+  #
+  # This test is therefore slightly more accurate than "test -f" to check for file precense.
+  # It is also a way to make sure we got the proper file name for the real test later on.
+  test_shortpath=`$CYGPATH -s -m "$new_path" 2> /dev/null`
+  if test "x$test_shortpath" = x; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: The path of POTENTIAL_FREETYPE_INCLUDE_PATH, which resolves as \"$path\", is invalid." >&5
+$as_echo "$as_me: The path of POTENTIAL_FREETYPE_INCLUDE_PATH, which resolves as \"$path\", is invalid." >&6;}
+    as_fn_error $? "Cannot locate the the path of POTENTIAL_FREETYPE_INCLUDE_PATH" "$LINENO" 5
+  fi
+
+  # Call helper function which possibly converts this using DOS-style short mode.
+  # If so, the updated path is stored in $new_path.
+
+  input_path="$new_path"
+  # Check if we need to convert this using DOS-style short mode. If the path
+  # contains just simple characters, use it. Otherwise (spaces, weird characters),
+  # take no chances and rewrite it.
+  # Note: m4 eats our [], so we need to use [ and ] instead.
+  has_forbidden_chars=`$ECHO "$input_path" | $GREP [^-._/a-zA-Z0-9]`
+  if test "x$has_forbidden_chars" != x; then
+    # Now convert it to mixed DOS-style, short mode (no spaces, and / instead of \)
+    shortmode_path=`$CYGPATH -s -m -a "$input_path"`
+    path_after_shortmode=`$CYGPATH -u "$shortmode_path"`
+    if test "x$path_after_shortmode" != "x$input_to_shortpath"; then
+      # Going to short mode and back again did indeed matter. Since short mode is
+      # case insensitive, let's make it lowercase to improve readability.
+      shortmode_path=`$ECHO "$shortmode_path" | $TR 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz'`
+      # Now convert it back to Unix-stile (cygpath)
+      input_path=`$CYGPATH -u "$shortmode_path"`
+      new_path="$input_path"
+    fi
+  fi
+
+  test_cygdrive_prefix=`$ECHO $input_path | $GREP ^/cygdrive/`
+  if test "x$test_cygdrive_prefix" = x; then
+    # As a simple fix, exclude /usr/bin since it's not a real path.
+    if test "x`$ECHO $new_path | $GREP ^/usr/bin/`" = x; then
+      # The path is in a Cygwin special directory (e.g. /home). We need this converted to
+      # a path prefixed by /cygdrive for fixpath to work.
+      new_path="$CYGWIN_ROOT_PATH$input_path"
+    fi
+  fi
+
+
+  if test "x$path" != "x$new_path"; then
+    POTENTIAL_FREETYPE_INCLUDE_PATH="$new_path"
+    { $as_echo "$as_me:${as_lineno-$LINENO}: Rewriting POTENTIAL_FREETYPE_INCLUDE_PATH to \"$new_path\"" >&5
+$as_echo "$as_me: Rewriting POTENTIAL_FREETYPE_INCLUDE_PATH to \"$new_path\"" >&6;}
+  fi
+
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+
+  path="$POTENTIAL_FREETYPE_INCLUDE_PATH"
+  has_colon=`$ECHO $path | $GREP ^.:`
+  new_path="$path"
+  if test "x$has_colon" = x; then
+    # Not in mixed or Windows style, start by that.
+    new_path=`cmd //c echo $path`
+  fi
+
+
+  input_path="$new_path"
+  # Check if we need to convert this using DOS-style short mode. If the path
+  # contains just simple characters, use it. Otherwise (spaces, weird characters),
+  # take no chances and rewrite it.
+  # Note: m4 eats our [], so we need to use [ and ] instead.
+  has_forbidden_chars=`$ECHO "$input_path" | $GREP [^-_/:a-zA-Z0-9]`
+  if test "x$has_forbidden_chars" != x; then
+    # Now convert it to mixed DOS-style, short mode (no spaces, and / instead of \)
+    new_path=`cmd /c "for %A in (\"$input_path\") do @echo %~sA"|$TR \\\\\\\\ / | $TR 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz'`
+  fi
+
+
+  windows_path="$new_path"
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+    unix_path=`$CYGPATH -u "$windows_path"`
+    new_path="$unix_path"
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+    unix_path=`$ECHO "$windows_path" | $SED -e 's,^\\(.\\):,/\\1,g' -e 's,\\\\,/,g'`
+    new_path="$unix_path"
+  fi
+
+  if test "x$path" != "x$new_path"; then
+    POTENTIAL_FREETYPE_INCLUDE_PATH="$new_path"
+    { $as_echo "$as_me:${as_lineno-$LINENO}: Rewriting POTENTIAL_FREETYPE_INCLUDE_PATH to \"$new_path\"" >&5
+$as_echo "$as_me: Rewriting POTENTIAL_FREETYPE_INCLUDE_PATH to \"$new_path\"" >&6;}
+  fi
+
+  # Save the first 10 bytes of this path to the storage, so fixpath can work.
+  all_fixpath_prefixes=("${all_fixpath_prefixes[@]}" "${new_path:0:10}")
+
+  else
+    # We're on a posix platform. Hooray! :)
+    path="$POTENTIAL_FREETYPE_INCLUDE_PATH"
+    has_space=`$ECHO "$path" | $GREP " "`
+    if test "x$has_space" != x; then
+      { $as_echo "$as_me:${as_lineno-$LINENO}: The path of POTENTIAL_FREETYPE_INCLUDE_PATH, which resolves as \"$path\", is invalid." >&5
+$as_echo "$as_me: The path of POTENTIAL_FREETYPE_INCLUDE_PATH, which resolves as \"$path\", is invalid." >&6;}
+      as_fn_error $? "Spaces are not allowed in this path." "$LINENO" 5
+    fi
+
+    # Use eval to expand a potential ~
+    eval path="$path"
+    if test ! -f "$path" && test ! -d "$path"; then
+      as_fn_error $? "The path of POTENTIAL_FREETYPE_INCLUDE_PATH, which resolves as \"$path\", is not found." "$LINENO" 5
+    fi
+
+    POTENTIAL_FREETYPE_INCLUDE_PATH="`cd "$path"; $THEPWDCMD -L`"
+  fi
+
+
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+
+  # Input might be given as Windows format, start by converting to
+  # unix format.
+  path="$POTENTIAL_FREETYPE_LIB_PATH"
+  new_path=`$CYGPATH -u "$path"`
+
+  # Cygwin tries to hide some aspects of the Windows file system, such that binaries are
+  # named .exe but called without that suffix. Therefore, "foo" and "foo.exe" are considered
+  # the same file, most of the time (as in "test -f"). But not when running cygpath -s, then
+  # "foo.exe" is OK but "foo" is an error.
+  #
+  # This test is therefore slightly more accurate than "test -f" to check for file precense.
+  # It is also a way to make sure we got the proper file name for the real test later on.
+  test_shortpath=`$CYGPATH -s -m "$new_path" 2> /dev/null`
+  if test "x$test_shortpath" = x; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: The path of POTENTIAL_FREETYPE_LIB_PATH, which resolves as \"$path\", is invalid." >&5
+$as_echo "$as_me: The path of POTENTIAL_FREETYPE_LIB_PATH, which resolves as \"$path\", is invalid." >&6;}
+    as_fn_error $? "Cannot locate the the path of POTENTIAL_FREETYPE_LIB_PATH" "$LINENO" 5
+  fi
+
+  # Call helper function which possibly converts this using DOS-style short mode.
+  # If so, the updated path is stored in $new_path.
+
+  input_path="$new_path"
+  # Check if we need to convert this using DOS-style short mode. If the path
+  # contains just simple characters, use it. Otherwise (spaces, weird characters),
+  # take no chances and rewrite it.
+  # Note: m4 eats our [], so we need to use [ and ] instead.
+  has_forbidden_chars=`$ECHO "$input_path" | $GREP [^-._/a-zA-Z0-9]`
+  if test "x$has_forbidden_chars" != x; then
+    # Now convert it to mixed DOS-style, short mode (no spaces, and / instead of \)
+    shortmode_path=`$CYGPATH -s -m -a "$input_path"`
+    path_after_shortmode=`$CYGPATH -u "$shortmode_path"`
+    if test "x$path_after_shortmode" != "x$input_to_shortpath"; then
+      # Going to short mode and back again did indeed matter. Since short mode is
+      # case insensitive, let's make it lowercase to improve readability.
+      shortmode_path=`$ECHO "$shortmode_path" | $TR 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz'`
+      # Now convert it back to Unix-stile (cygpath)
+      input_path=`$CYGPATH -u "$shortmode_path"`
+      new_path="$input_path"
+    fi
+  fi
+
+  test_cygdrive_prefix=`$ECHO $input_path | $GREP ^/cygdrive/`
+  if test "x$test_cygdrive_prefix" = x; then
+    # As a simple fix, exclude /usr/bin since it's not a real path.
+    if test "x`$ECHO $new_path | $GREP ^/usr/bin/`" = x; then
+      # The path is in a Cygwin special directory (e.g. /home). We need this converted to
+      # a path prefixed by /cygdrive for fixpath to work.
+      new_path="$CYGWIN_ROOT_PATH$input_path"
+    fi
+  fi
+
+
+  if test "x$path" != "x$new_path"; then
+    POTENTIAL_FREETYPE_LIB_PATH="$new_path"
+    { $as_echo "$as_me:${as_lineno-$LINENO}: Rewriting POTENTIAL_FREETYPE_LIB_PATH to \"$new_path\"" >&5
+$as_echo "$as_me: Rewriting POTENTIAL_FREETYPE_LIB_PATH to \"$new_path\"" >&6;}
+  fi
+
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+
+  path="$POTENTIAL_FREETYPE_LIB_PATH"
+  has_colon=`$ECHO $path | $GREP ^.:`
+  new_path="$path"
+  if test "x$has_colon" = x; then
+    # Not in mixed or Windows style, start by that.
+    new_path=`cmd //c echo $path`
+  fi
+
+
+  input_path="$new_path"
+  # Check if we need to convert this using DOS-style short mode. If the path
+  # contains just simple characters, use it. Otherwise (spaces, weird characters),
+  # take no chances and rewrite it.
+  # Note: m4 eats our [], so we need to use [ and ] instead.
+  has_forbidden_chars=`$ECHO "$input_path" | $GREP [^-_/:a-zA-Z0-9]`
+  if test "x$has_forbidden_chars" != x; then
+    # Now convert it to mixed DOS-style, short mode (no spaces, and / instead of \)
+    new_path=`cmd /c "for %A in (\"$input_path\") do @echo %~sA"|$TR \\\\\\\\ / | $TR 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz'`
+  fi
+
+
+  windows_path="$new_path"
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+    unix_path=`$CYGPATH -u "$windows_path"`
+    new_path="$unix_path"
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+    unix_path=`$ECHO "$windows_path" | $SED -e 's,^\\(.\\):,/\\1,g' -e 's,\\\\,/,g'`
+    new_path="$unix_path"
+  fi
+
+  if test "x$path" != "x$new_path"; then
+    POTENTIAL_FREETYPE_LIB_PATH="$new_path"
+    { $as_echo "$as_me:${as_lineno-$LINENO}: Rewriting POTENTIAL_FREETYPE_LIB_PATH to \"$new_path\"" >&5
+$as_echo "$as_me: Rewriting POTENTIAL_FREETYPE_LIB_PATH to \"$new_path\"" >&6;}
+  fi
+
+  # Save the first 10 bytes of this path to the storage, so fixpath can work.
+  all_fixpath_prefixes=("${all_fixpath_prefixes[@]}" "${new_path:0:10}")
+
+  else
+    # We're on a posix platform. Hooray! :)
+    path="$POTENTIAL_FREETYPE_LIB_PATH"
+    has_space=`$ECHO "$path" | $GREP " "`
+    if test "x$has_space" != x; then
+      { $as_echo "$as_me:${as_lineno-$LINENO}: The path of POTENTIAL_FREETYPE_LIB_PATH, which resolves as \"$path\", is invalid." >&5
+$as_echo "$as_me: The path of POTENTIAL_FREETYPE_LIB_PATH, which resolves as \"$path\", is invalid." >&6;}
+      as_fn_error $? "Spaces are not allowed in this path." "$LINENO" 5
+    fi
+
+    # Use eval to expand a potential ~
+    eval path="$path"
+    if test ! -f "$path" && test ! -d "$path"; then
+      as_fn_error $? "The path of POTENTIAL_FREETYPE_LIB_PATH, which resolves as \"$path\", is not found." "$LINENO" 5
+    fi
+
+    POTENTIAL_FREETYPE_LIB_PATH="`cd "$path"; $THEPWDCMD -L`"
+  fi
+
+
+    FREETYPE_INCLUDE_PATH="$POTENTIAL_FREETYPE_INCLUDE_PATH"
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for freetype includes" >&5
+$as_echo_n "checking for freetype includes... " >&6; }
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $FREETYPE_INCLUDE_PATH" >&5
+$as_echo "$FREETYPE_INCLUDE_PATH" >&6; }
+    FREETYPE_LIB_PATH="$POTENTIAL_FREETYPE_LIB_PATH"
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for freetype libraries" >&5
+$as_echo_n "checking for freetype libraries... " >&6; }
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $FREETYPE_LIB_PATH" >&5
+$as_echo "$FREETYPE_LIB_PATH" >&6; }
+  fi
+
+          if test "x$FOUND_FREETYPE" != xyes; then
+            as_fn_error $? "Can not use the built freetype at location given by --with-freetype-src" "$LINENO" 5
+          fi
+        else
+          { $as_echo "$as_me:${as_lineno-$LINENO}: User specified --with-freetype-src but building freetype failed. (see freetype.log for build results)" >&5
+$as_echo "$as_me: User specified --with-freetype-src but building freetype failed. (see freetype.log for build results)" >&6;}
+          as_fn_error $? "Consider building freetype manually and using --with-freetype instead." "$LINENO" 5
+        fi
+      else
+        { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: --with-freetype-src is currently only supported on Windows - ignoring" >&5
+$as_echo "$as_me: WARNING: --with-freetype-src is currently only supported on Windows - ignoring" >&2;}
+      fi
+    fi
 
     if test "x$with_freetype" != x || test "x$with_freetype_include" != x || test "x$with_freetype_lib" != x; then
       # User has specified settings
@@ -49882,8 +50215,8 @@ fi
     # Number of jobs was not specified, calculate.
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for appropriate number of jobs to run in parallel" >&5
 $as_echo_n "checking for appropriate number of jobs to run in parallel... " >&6; }
-    # Approximate memory in GB, rounding up a bit.
-    memory_gb=`expr $MEMORY_SIZE / 1100`
+    # Approximate memory in GB.
+    memory_gb=`expr $MEMORY_SIZE / 1024`
     # Pick the lowest of memory in gb and number of cores.
     if test "$memory_gb" -lt "$NUM_CORES"; then
       JOBS="$memory_gb"
@@ -49909,6 +50242,208 @@ $as_echo "$JOBS" >&6; }
 
 
 
+# Setup arguments for the boot jdk (after cores and memory have been setup)
+
+  ##############################################################################
+  #
+  # Specify jvm options for anything that is run with the Boot JDK.
+  # Not all JVM:s accept the same arguments on the command line.
+  #
+
+# Check whether --with-boot-jdk-jvmargs was given.
+if test "${with_boot_jdk_jvmargs+set}" = set; then :
+  withval=$with_boot_jdk_jvmargs;
+fi
+
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking flags for boot jdk java command " >&5
+$as_echo_n "checking flags for boot jdk java command ... " >&6; }
+
+  # Disable special log output when a debug build is used as Boot JDK...
+
+  $ECHO "Check if jvm arg is ok: -XX:-PrintVMOptions -XX:-UnlockDiagnosticVMOptions -XX:-LogVMOutput" >&5
+  $ECHO "Command: $JAVA -XX:-PrintVMOptions -XX:-UnlockDiagnosticVMOptions -XX:-LogVMOutput -version" >&5
+  OUTPUT=`$JAVA -XX:-PrintVMOptions -XX:-UnlockDiagnosticVMOptions -XX:-LogVMOutput -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs="$boot_jdk_jvmargs -XX:-PrintVMOptions -XX:-UnlockDiagnosticVMOptions -XX:-LogVMOutput"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+
+  # Apply user provided options.
+
+  $ECHO "Check if jvm arg is ok: $with_boot_jdk_jvmargs" >&5
+  $ECHO "Command: $JAVA $with_boot_jdk_jvmargs -version" >&5
+  OUTPUT=`$JAVA $with_boot_jdk_jvmargs -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs="$boot_jdk_jvmargs $with_boot_jdk_jvmargs"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $boot_jdk_jvmargs" >&5
+$as_echo "$boot_jdk_jvmargs" >&6; }
+
+  # For now, general JAVA_FLAGS are the same as the boot jdk jvmargs
+  JAVA_FLAGS=$boot_jdk_jvmargs
+
+
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking flags for boot jdk java command for big workloads" >&5
+$as_echo_n "checking flags for boot jdk java command for big workloads... " >&6; }
+
+  # Starting amount of heap memory.
+
+  $ECHO "Check if jvm arg is ok: -Xms64M" >&5
+  $ECHO "Command: $JAVA -Xms64M -version" >&5
+  OUTPUT=`$JAVA -Xms64M -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -Xms64M"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+
+  # Maximum amount of heap memory.
+  # Maximum stack size.
+  JVM_MAX_HEAP=`expr $MEMORY_SIZE / 2`
+  if test "x$BUILD_NUM_BITS" = x32; then
+    if test "$JVM_MAX_HEAP" -gt "1100"; then
+      JVM_MAX_HEAP=1100
+    elif test "$JVM_MAX_HEAP" -lt "512"; then
+      JVM_MAX_HEAP=512
+    fi
+    STACK_SIZE=768
+  else
+    # Running Javac on a JVM on a 64-bit machine, takes more space since 64-bit
+    # pointers are used. Apparently, we need to increase the heap and stack
+    # space for the jvm. More specifically, when running javac to build huge
+    # jdk batch
+    if test "$JVM_MAX_HEAP" -gt "1600"; then
+      JVM_MAX_HEAP=1600
+    elif test "$JVM_MAX_HEAP" -lt "512"; then
+      JVM_MAX_HEAP=512
+    fi
+    STACK_SIZE=1536
+  fi
+
+  $ECHO "Check if jvm arg is ok: -Xmx${JVM_MAX_HEAP}M" >&5
+  $ECHO "Command: $JAVA -Xmx${JVM_MAX_HEAP}M -version" >&5
+  OUTPUT=`$JAVA -Xmx${JVM_MAX_HEAP}M -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -Xmx${JVM_MAX_HEAP}M"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+
+  $ECHO "Check if jvm arg is ok: -XX:ThreadStackSize=$STACK_SIZE" >&5
+  $ECHO "Command: $JAVA -XX:ThreadStackSize=$STACK_SIZE -version" >&5
+  OUTPUT=`$JAVA -XX:ThreadStackSize=$STACK_SIZE -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -XX:ThreadStackSize=$STACK_SIZE"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $boot_jdk_jvmargs_big" >&5
+$as_echo "$boot_jdk_jvmargs_big" >&6; }
+
+  JAVA_FLAGS_BIG=$boot_jdk_jvmargs_big
+
+
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking flags for boot jdk java command for small workloads" >&5
+$as_echo_n "checking flags for boot jdk java command for small workloads... " >&6; }
+
+  # Use serial gc for small short lived tools if possible
+
+  $ECHO "Check if jvm arg is ok: -XX:+UseSerialGC" >&5
+  $ECHO "Command: $JAVA -XX:+UseSerialGC -version" >&5
+  OUTPUT=`$JAVA -XX:+UseSerialGC -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs_small="$boot_jdk_jvmargs_small -XX:+UseSerialGC"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+
+  $ECHO "Check if jvm arg is ok: -Xms32M" >&5
+  $ECHO "Command: $JAVA -Xms32M -version" >&5
+  OUTPUT=`$JAVA -Xms32M -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs_small="$boot_jdk_jvmargs_small -Xms32M"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+
+  $ECHO "Check if jvm arg is ok: -Xmx512M" >&5
+  $ECHO "Command: $JAVA -Xmx512M -version" >&5
+  OUTPUT=`$JAVA -Xmx512M -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs_small="$boot_jdk_jvmargs_small -Xmx512M"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $boot_jdk_jvmargs_small" >&5
+$as_echo "$boot_jdk_jvmargs_small" >&6; }
+
+  JAVA_FLAGS_SMALL=$boot_jdk_jvmargs_small
+
+
+  JAVA_TOOL_FLAGS_SMALL=""
+  for f in $JAVA_FLAGS_SMALL; do
+    JAVA_TOOL_FLAGS_SMALL="$JAVA_TOOL_FLAGS_SMALL -J$f"
+  done
+
+
+
 # Setup smart javac (after cores and memory have been setup)
 
 
@@ -49925,44 +50460,11 @@ fi
       as_fn_error $? "Could not execute server java: $SJAVAC_SERVER_JAVA" "$LINENO" 5
     fi
   else
-    SJAVAC_SERVER_JAVA=""
-    # Hotspot specific options.
-
-  $ECHO "Check if jvm arg is ok: -verbosegc" >&5
-  $ECHO "Command: $JAVA -verbosegc -version" >&5
-  OUTPUT=`$JAVA -verbosegc -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    SJAVAC_SERVER_JAVA="$SJAVAC_SERVER_JAVA -verbosegc"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-    # JRockit specific options.
-
-  $ECHO "Check if jvm arg is ok: -Xverbose:gc" >&5
-  $ECHO "Command: $JAVA -Xverbose:gc -version" >&5
-  OUTPUT=`$JAVA -Xverbose:gc -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    SJAVAC_SERVER_JAVA="$SJAVAC_SERVER_JAVA -Xverbose:gc"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-    SJAVAC_SERVER_JAVA="$JAVA $SJAVAC_SERVER_JAVA"
+    SJAVAC_SERVER_JAVA="$JAVA"
   fi
 
 
-  if test "$MEMORY_SIZE" -gt "2500"; then
+  if test "$MEMORY_SIZE" -gt "3000"; then
 
   $ECHO "Check if jvm arg is ok: -d64" >&5
   $ECHO "Command: $SJAVAC_SERVER_JAVA -d64 -version" >&5
@@ -49984,85 +50486,31 @@ fi
     fi
   fi
 
+  MX_VALUE=`expr $MEMORY_SIZE / 2`
   if test "$JVM_64BIT" = true; then
-    if test "$MEMORY_SIZE" -gt "17000"; then
-
-  $ECHO "Check if jvm arg is ok: -Xms10G -Xmx10G" >&5
-  $ECHO "Command: $SJAVAC_SERVER_JAVA -Xms10G -Xmx10G -version" >&5
-  OUTPUT=`$SJAVAC_SERVER_JAVA -Xms10G -Xmx10G -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    SJAVAC_SERVER_JAVA="$SJAVAC_SERVER_JAVA -Xms10G -Xmx10G"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
+    # Set ms lower than mx since more than one instance of the server might
+    # get launched at the same time before they figure out which instance won.
+    MS_VALUE=512
+    if test "$MX_VALUE" -gt "2048"; then
+      MX_VALUE=2048
     fi
-    if test "$MEMORY_SIZE" -gt "10000" && test "$JVM_ARG_OK" = false; then
-
-  $ECHO "Check if jvm arg is ok: -Xms6G -Xmx6G" >&5
-  $ECHO "Command: $SJAVAC_SERVER_JAVA -Xms6G -Xmx6G -version" >&5
-  OUTPUT=`$SJAVAC_SERVER_JAVA -Xms6G -Xmx6G -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    SJAVAC_SERVER_JAVA="$SJAVAC_SERVER_JAVA -Xms6G -Xmx6G"
-    JVM_ARG_OK=true
   else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-    fi
-    if test "$MEMORY_SIZE" -gt "5000" && test "$JVM_ARG_OK" = false; then
-
-  $ECHO "Check if jvm arg is ok: -Xms1G -Xmx3G" >&5
-  $ECHO "Command: $SJAVAC_SERVER_JAVA -Xms1G -Xmx3G -version" >&5
-  OUTPUT=`$SJAVAC_SERVER_JAVA -Xms1G -Xmx3G -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    SJAVAC_SERVER_JAVA="$SJAVAC_SERVER_JAVA -Xms1G -Xmx3G"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-    fi
-    if test "$MEMORY_SIZE" -gt "3800" && test "$JVM_ARG_OK" = false; then
-
-  $ECHO "Check if jvm arg is ok: -Xms1G -Xmx2500M" >&5
-  $ECHO "Command: $SJAVAC_SERVER_JAVA -Xms1G -Xmx2500M -version" >&5
-  OUTPUT=`$SJAVAC_SERVER_JAVA -Xms1G -Xmx2500M -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    SJAVAC_SERVER_JAVA="$SJAVAC_SERVER_JAVA -Xms1G -Xmx2500M"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
+    MS_VALUE=256
+    if test "$MX_VALUE" -gt "1500"; then
+      MX_VALUE=1500
     fi
   fi
-  if test "$MEMORY_SIZE" -gt "2500" && test "$JVM_ARG_OK" = false; then
+  if test "$MX_VALUE" -lt "512"; then
+    MX_VALUE=512
+  fi
 
-  $ECHO "Check if jvm arg is ok: -Xms1000M -Xmx1500M" >&5
-  $ECHO "Command: $SJAVAC_SERVER_JAVA -Xms1000M -Xmx1500M -version" >&5
-  OUTPUT=`$SJAVAC_SERVER_JAVA -Xms1000M -Xmx1500M -version 2>&1`
+  $ECHO "Check if jvm arg is ok: -Xms${MS_VALUE}M -Xmx${MX_VALUE}M" >&5
+  $ECHO "Command: $SJAVAC_SERVER_JAVA -Xms${MS_VALUE}M -Xmx${MX_VALUE}M -version" >&5
+  OUTPUT=`$SJAVAC_SERVER_JAVA -Xms${MS_VALUE}M -Xmx${MX_VALUE}M -version 2>&1`
   FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
   FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
   if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    SJAVAC_SERVER_JAVA="$SJAVAC_SERVER_JAVA -Xms1000M -Xmx1500M"
+    SJAVAC_SERVER_JAVA="$SJAVAC_SERVER_JAVA -Xms${MS_VALUE}M -Xmx${MX_VALUE}M"
     JVM_ARG_OK=true
   else
     $ECHO "Arg failed:" >&5
@@ -50070,44 +50518,7 @@ fi
     JVM_ARG_OK=false
   fi
 
-  fi
-  if test "$MEMORY_SIZE" -gt "1000" && test "$JVM_ARG_OK" = false; then
 
-  $ECHO "Check if jvm arg is ok: -Xms400M -Xmx1100M" >&5
-  $ECHO "Command: $SJAVAC_SERVER_JAVA -Xms400M -Xmx1100M -version" >&5
-  OUTPUT=`$SJAVAC_SERVER_JAVA -Xms400M -Xmx1100M -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    SJAVAC_SERVER_JAVA="$SJAVAC_SERVER_JAVA -Xms400M -Xmx1100M"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-  fi
-  if test "$JVM_ARG_OK" = false; then
-
-  $ECHO "Check if jvm arg is ok: -Xms256M -Xmx512M" >&5
-  $ECHO "Command: $SJAVAC_SERVER_JAVA -Xms256M -Xmx512M -version" >&5
-  OUTPUT=`$SJAVAC_SERVER_JAVA -Xms256M -Xmx512M -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    SJAVAC_SERVER_JAVA="$SJAVAC_SERVER_JAVA -Xms256M -Xmx512M"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-  fi
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to use sjavac" >&5
-$as_echo_n "checking whether to use sjavac... " >&6; }
   # Check whether --enable-sjavac was given.
 if test "${enable_sjavac+set}" = set; then :
   enableval=$enable_sjavac; ENABLE_SJAVAC="${enableval}"
@@ -50115,6 +50526,13 @@ else
   ENABLE_SJAVAC='no'
 fi
 
+  if test "x$JVM_ARG_OK" = "xfalse"; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: Could not set -Xms${MS_VALUE}M -Xmx${MX_VALUE}M, disabling sjavac" >&5
+$as_echo "$as_me: WARNING: Could not set -Xms${MS_VALUE}M -Xmx${MX_VALUE}M, disabling sjavac" >&2;}
+    ENABLE_SJAVAC=no;
+  fi
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to use sjavac" >&5
+$as_echo_n "checking whether to use sjavac... " >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ENABLE_SJAVAC" >&5
 $as_echo "$ENABLE_SJAVAC" >&6; }
 
