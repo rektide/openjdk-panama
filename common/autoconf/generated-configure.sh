@@ -4327,7 +4327,7 @@ TOOLCHAIN_DESCRIPTION_xlc="IBM XL C/C++"
 #CUSTOM_AUTOCONF_INCLUDE
 
 # Do not change or remove the following line, it is needed for consistency checks:
-DATE_WHEN_GENERATED=1410377275
+DATE_WHEN_GENERATED=1410516937
 
 ###############################################################################
 #
@@ -52346,4 +52346,5 @@ $CHMOD +x $OUTPUT_ROOT/compare.sh
     printf "You should run without '--no-create | -n' to create the configuration.\n"
     printf "\n"
   fi
+
 
