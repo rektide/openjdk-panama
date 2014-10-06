@@ -168,6 +168,12 @@
       <name>java.util.zip</name>
     </export>
     <export>
+      <name>javax.arrays.tbd</name>
+    </export>
+    <export>
+      <name>javax.arrays.v2</name>
+    </export>
+    <export>
       <name>javax.crypto</name>
     </export>
     <export>
