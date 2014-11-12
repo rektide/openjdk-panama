@@ -1110,11 +1110,7 @@ AC_DEFUN_ONCE([LIB_SETUP_LIBCLANG],
   )
 
   if test "x$with_libclang" = "xno"; then
-    AC_MSG_ERROR([libclang is required!])
     ENABLE_LIBCLANG="no"
-    LIBCLANG_CPPFLAGS=""
-    LIBCLANG_LDFLAGS=""
-    LIBCLANG_LIBS=""
   else
     ENABLE_LIBCLANG="yes"
     AC_ARG_WITH([libclang-include], [AS_HELP_STRING([--with-libclang-include=<path>],
@@ -1136,26 +1132,36 @@ AC_DEFUN_ONCE([LIB_SETUP_LIBCLANG],
     OLD_CPPFLAGS=$CPPFLAGS
     OLD_LDFLAGS=$LDFLAGS
     OLD_LIBS=$LIBS
+
     CPPFLAGS="$LIBCLANG_CPPFLAGS"
     LDFLAGS="$LIBCLANG_LDFLAGS"
     LIBS=""
-    AC_CHECK_HEADER("clang-c/Index.h", [],
-        [ AC_MSG_ERROR([clang-c/Index.h not found!  Please download pre-built llvm binary
-             from http://llvm.org/releases/download.html, and specify the location
-             with --with-libclang
-            ])])
-    AC_CHECK_LIB(clang, clang_getClangVersion, [],
-        [ AC_MSG_ERROR([libclang not found!  Please download pre-built llvm binary
-             from http://llvm.org/releases/download.html, and specify the location
-             with --with-libclang
-            ])])
+    AC_CHECK_HEADER("clang-c/Index.h", [], [ENABLE_LIBCLANG="no"])
+    if test "x$ENABLE_LIBCLANG" = "xyes"; then
+      AC_CHECK_LIB(clang, clang_getClangVersion, [], [ENABLE_LIBCLANG="no"])
+    fi
+
+    if test "x$ENABLE_LIBCLANG" = "xno"; then
+      AC_MSG_NOTICE([Cannot locate libclang! You can download pre-built llvm
+        binary from http://llvm.org/releases/download.html, then specify the
+        location using --with-libclang])
+    fi
+
     LIBCLANG_LIBS="$LIBS"
+
     LIBS="$OLD_LIBS"
-    CPPFLAGS="$OLD_CPPFLAGS"
     LDFLAGS="$OLD_LDFLAGS"
-    AC_SUBST(ENABLE_LIBCLANG)
-    AC_SUBST(LIBCLANG_CPPFLAGS)
-    AC_SUBST(LIBCLANG_LDFLAGS)
-    AC_SUBST(LIBCLANG_LIBS)
+    CPPFLAGS="$OLD_CPPFLAGS"
   fi
+
+  if test "x$ENABLE_LIBCLANG" = "xno"; then
+    LIBCLANG_CPPFLAGS=""
+    LIBCLANG_LDFLAGS=""
+    LIBCLANG_LIBS=""
+  fi
+
+  AC_SUBST(ENABLE_LIBCLANG)
+  AC_SUBST(LIBCLANG_CPPFLAGS)
+  AC_SUBST(LIBCLANG_LDFLAGS)
+  AC_SUBST(LIBCLANG_LIBS)
 ])

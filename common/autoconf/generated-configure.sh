@@ -4346,7 +4346,7 @@ TOOLCHAIN_DESCRIPTION_xlc="IBM XL C/C++"
 #CUSTOM_AUTOCONF_INCLUDE
 
 # Do not change or remove the following line, it is needed for consistency checks:
-DATE_WHEN_GENERATED=1415809852
+DATE_WHEN_GENERATED=1415827564
 
 ###############################################################################
 #
@@ -49252,11 +49252,7 @@ fi
 
 
   if test "x$with_libclang" = "xno"; then
-    as_fn_error $? "libclang is required!" "$LINENO" 5
     ENABLE_LIBCLANG="no"
-    LIBCLANG_CPPFLAGS=""
-    LIBCLANG_LDFLAGS=""
-    LIBCLANG_LIBS=""
   else
     ENABLE_LIBCLANG="yes"
 
@@ -49286,6 +49282,7 @@ fi
     OLD_CPPFLAGS=$CPPFLAGS
     OLD_LDFLAGS=$LDFLAGS
     OLD_LIBS=$LIBS
+
     CPPFLAGS="$LIBCLANG_CPPFLAGS"
     LDFLAGS="$LIBCLANG_LDFLAGS"
     LIBS=""
@@ -49294,14 +49291,12 @@ ac_fn_cxx_check_header_mongrel "$LINENO" ""clang-c/Index.h"" "$as_ac_Header" "$a
 if eval test \"x\$"$as_ac_Header"\" = x"yes"; then :
 
 else
-   as_fn_error $? "clang-c/Index.h not found!  Please download pre-built llvm binary
-             from http://llvm.org/releases/download.html, and specify the location
-             with --with-libclang
-            " "$LINENO" 5
+  ENABLE_LIBCLANG="no"
 fi
 
 
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for clang_getClangVersion in -lclang" >&5
+    if test "x$ENABLE_LIBCLANG" = "xyes"; then
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for clang_getClangVersion in -lclang" >&5
 $as_echo_n "checking for clang_getClangVersion in -lclang... " >&6; }
 if ${ac_cv_lib_clang_clang_getClangVersion+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -49345,21 +49340,37 @@ _ACEOF
   LIBS="-lclang $LIBS"
 
 else
-   as_fn_error $? "libclang not found!  Please download pre-built llvm binary
-             from http://llvm.org/releases/download.html, and specify the location
-             with --with-libclang
-            " "$LINENO" 5
+  ENABLE_LIBCLANG="no"
 fi
 
+    fi
+
+    if test "x$ENABLE_LIBCLANG" = "xno"; then
+      { $as_echo "$as_me:${as_lineno-$LINENO}: Cannot locate libclang! You can download pre-built llvm
+        binary from http://llvm.org/releases/download.html, then specify the
+        location using --with-libclang" >&5
+$as_echo "$as_me: Cannot locate libclang! You can download pre-built llvm
+        binary from http://llvm.org/releases/download.html, then specify the
+        location using --with-libclang" >&6;}
+    fi
+
     LIBCLANG_LIBS="$LIBS"
+
     LIBS="$OLD_LIBS"
-    CPPFLAGS="$OLD_CPPFLAGS"
     LDFLAGS="$OLD_LDFLAGS"
-
-
-
-
+    CPPFLAGS="$OLD_CPPFLAGS"
   fi
+
+  if test "x$ENABLE_LIBCLANG" = "xno"; then
+    LIBCLANG_CPPFLAGS=""
+    LIBCLANG_LDFLAGS=""
+    LIBCLANG_LIBS=""
+  fi
+
+
+
+
+
 
 
   ###############################################################################
