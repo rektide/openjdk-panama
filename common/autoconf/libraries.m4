@@ -1099,3 +1099,63 @@ AC_DEFUN_ONCE([LIB_SETUP_ON_WINDOWS],
   fi
   AC_SUBST(MSVCR_DLL)
 ])
+
+AC_DEFUN_ONCE([LIB_SETUP_LIBCLANG],
+[
+  AC_ARG_WITH([libclang], [AS_HELP_STRING([--with-libclang=<path to llvm>],
+        [Specify path of llvm installation contains libclang. Pre-built llvm
+         binary can be downloaded from http://llvm.org/releases/download.html])],
+    [],
+    [with_libclang=yes]
+  )
+
+  if test "x$with_libclang" = "xno"; then
+    AC_MSG_ERROR([libclang is required!])
+    ENABLE_LIBCLANG="no"
+    LIBCLANG_CPPFLAGS=""
+    LIBCLANG_LDFLAGS=""
+    LIBCLANG_LIBS=""
+  else
+    ENABLE_LIBCLANG="yes"
+    AC_ARG_WITH([libclang-include], [AS_HELP_STRING([--with-libclang-include=<path>],
+        [Specify where to find libclang header files, clang-c/Index.h ])],
+      [LIBCLANG_CPPFLAGS="-I$withval"],
+      [LIBCLANG_CPPFLAGS=""]
+    )
+    AC_ARG_WITH([libclang-lib], [AS_HELP_STRING([--with-libclang-lib=<path>],
+        [Specify where to find libclang binary, so/dylib/dll ])],
+      [LIBCLANG_LDFLAGS="-L$withval"],
+      [LIBCLANG_LDFLAGS=""]
+    )
+
+    if test "x$with_libclang" != "xyes"; then
+      LIBCLANG_CPPFLAGS="-I$with_libclang/include"
+      LIBCLANG_LDFLAGS="-L$with_libclang/lib"
+    fi
+
+    OLD_CPPFLAGS=$CPPFLAGS
+    OLD_LDFLAGS=$LDFLAGS
+    OLD_LIBS=$LIBS
+    CPPFLAGS="$LIBCLANG_CPPFLAGS"
+    LDFLAGS="$LIBCLANG_LDFLAGS"
+    LIBS=""
+    AC_CHECK_HEADER("clang-c/Index.h", [],
+        [ AC_MSG_ERROR([clang-c/Index.h not found!  Please download pre-built llvm binary
+             from http://llvm.org/releases/download.html, and specify the location
+             with --with-libclang
+            ])])
+    AC_CHECK_LIB(clang, clang_getClangVersion, [],
+        [ AC_MSG_ERROR([libclang not found!  Please download pre-built llvm binary
+             from http://llvm.org/releases/download.html, and specify the location
+             with --with-libclang
+            ])])
+    LIBCLANG_LIBS="$LIBS"
+    LIBS="$OLD_LIBS"
+    CPPFLAGS="$OLD_CPPFLAGS"
+    LDFLAGS="$OLD_LDFLAGS"
+    AC_SUBST(ENABLE_LIBCLANG)
+    AC_SUBST(LIBCLANG_CPPFLAGS)
+    AC_SUBST(LIBCLANG_LDFLAGS)
+    AC_SUBST(LIBCLANG_LIBS)
+  fi
+])

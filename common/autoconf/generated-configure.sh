@@ -654,6 +654,10 @@ LLVM_CONFIG
 LIBFFI_LIBS
 LIBFFI_CFLAGS
 STATIC_CXX_SETTING
+LIBCLANG_LIBS
+LIBCLANG_LDFLAGS
+LIBCLANG_CPPFLAGS
+ENABLE_LIBCLANG
 LIBDL
 LIBM
 LIBZIP_CAN_USE_MMAP
@@ -1100,6 +1104,9 @@ with_giflib
 with_lcms
 with_libpng
 with_zlib
+with_libclang
+with_libclang_include
+with_libclang_lib
 with_stdc__lib
 with_msvcr_dll
 with_dxsdk
@@ -1963,6 +1970,15 @@ Optional Packages:
                           (system, bundled) [bundled]
   --with-zlib             use zlib from build system or OpenJDK source
                           (system, bundled) [bundled]
+  --with-libclang=<path to llvm>
+                          Specify path of llvm installation contains libclang.
+                          Pre-built llvm binary can be downloaded from
+                          http://llvm.org/releases/download.html
+  --with-libclang-include=<path>
+                          Specify where to find libclang header files,
+                          clang-c/Index.h
+  --with-libclang-lib=<path>
+                          Specify where to find libclang binary, so/dylib/dll
   --with-stdc++lib=<static>,<dynamic>,<default>
                           force linking of the C++ runtime on Linux to either
                           static or dynamic, default is static with dynamic as
@@ -4067,6 +4083,8 @@ pkgadd_help() {
 
 
 
+
+
 #
 # Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -4328,7 +4346,7 @@ TOOLCHAIN_DESCRIPTION_xlc="IBM XL C/C++"
 #CUSTOM_AUTOCONF_INCLUDE
 
 # Do not change or remove the following line, it is needed for consistency checks:
-DATE_WHEN_GENERATED=1413202737
+DATE_WHEN_GENERATED=1415775437
 
 ###############################################################################
 #
@@ -49221,6 +49239,127 @@ fi
   LIBDL="$LIBS"
 
   LIBS="$save_LIBS"
+
+
+
+# Check whether --with-libclang was given.
+if test "${with_libclang+set}" = set; then :
+  withval=$with_libclang;
+else
+  with_libclang=yes
+
+fi
+
+
+  if test "x$with_libclang" = "xno"; then
+    as_fn_error $? "libclang is required!" "$LINENO" 5
+    ENABLE_LIBCLANG="no"
+    LIBCLANG_CPPFLAGS=""
+    LIBCLANG_LDFLAGS=""
+    LIBCLANG_LIBS=""
+  else
+    ENABLE_LIBCLANG="yes"
+
+# Check whether --with-libclang-include was given.
+if test "${with_libclang_include+set}" = set; then :
+  withval=$with_libclang_include; LIBCLANG_CPPFLAGS="-I$withval"
+else
+  LIBCLANG_CPPFLAGS=""
+
+fi
+
+
+# Check whether --with-libclang-lib was given.
+if test "${with_libclang_lib+set}" = set; then :
+  withval=$with_libclang_lib; LIBCLANG_LDFLAGS="-L$withval"
+else
+  LIBCLANG_LDFLAGS=""
+
+fi
+
+
+    if test "x$with_libclang" != "xyes"; then
+      LIBCLANG_CPPFLAGS="-I$with_libclang/include"
+      LIBCLANG_LDFLAGS="-L$with_libclang/lib"
+    fi
+
+    OLD_CPPFLAGS=$CPPFLAGS
+    OLD_LDFLAGS=$LDFLAGS
+    OLD_LIBS=$LIBS
+    CPPFLAGS="$LIBCLANG_CPPFLAGS"
+    LDFLAGS="$LIBCLANG_LDFLAGS"
+    LIBS=""
+    as_ac_Header=`$as_echo "ac_cv_header_"clang-c/Index.h"" | $as_tr_sh`
+ac_fn_cxx_check_header_mongrel "$LINENO" ""clang-c/Index.h"" "$as_ac_Header" "$ac_includes_default"
+if eval test \"x\$"$as_ac_Header"\" = x"yes"; then :
+
+else
+   as_fn_error $? "clang-c/Index.h not found!  Please download pre-built llvm binary
+             from http://llvm.org/releases/download.html, and specify the location
+             with --with-libclang
+            " "$LINENO" 5
+fi
+
+
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for clang_getClangVersion in -lclang" >&5
+$as_echo_n "checking for clang_getClangVersion in -lclang... " >&6; }
+if ${ac_cv_lib_clang_clang_getClangVersion+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lclang  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char clang_getClangVersion ();
+int
+main ()
+{
+return clang_getClangVersion ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_cxx_try_link "$LINENO"; then :
+  ac_cv_lib_clang_clang_getClangVersion=yes
+else
+  ac_cv_lib_clang_clang_getClangVersion=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_clang_clang_getClangVersion" >&5
+$as_echo "$ac_cv_lib_clang_clang_getClangVersion" >&6; }
+if test "x$ac_cv_lib_clang_clang_getClangVersion" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBCLANG 1
+_ACEOF
+
+  LIBS="-lclang $LIBS"
+
+else
+   as_fn_error $? "libclang not found!  Please download pre-built llvm binary
+             from http://llvm.org/releases/download.html, and specify the location
+             with --with-libclang
+            " "$LINENO" 5
+fi
+
+    LIBCLANG_LIBS="$LIBS"
+    LIBS="$OLD_LIBS"
+    CPPFLAGS="$OLD_CPPFLAGS"
+    LDFLAGS="$OLD_LDFLAGS"
+
+
+
+
+  fi
 
 
   ###############################################################################
